@@ -1,0 +1,21 @@
+version: "3.9"
+services:
+  file_metrics:
+    build: .
+    container_name: file_metrics
+    restart: always
+    ports:
+      - "${APP_PORT}:${APP_PORT}"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./main.py:/main.py
+    environment:
+      APP_PORT: ${APP_PORT}
+    command:
+      bash -c "uvicorn main:app --host 0.0.0.0 --port ${APP_PORT}"
+    networks:
+      - db
+
+networks:
+  db:
+    driver: bridge
