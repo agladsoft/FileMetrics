@@ -163,7 +163,7 @@ async def track_file(metrics_name: FileMetrics, background_tasks: BackgroundTask
         ).set(current_rows)
 
         # Запускаем фоновую задачу для сброса через 60 секунд
-        background_tasks.add_task(reset_status, metrics_name.script_name, metrics_name.file_name)
+        # background_tasks.add_task(reset_status, metrics_name.script_name, metrics_name.file_name)
 
         return {"message": f"Metrics updated: {current_rows} rows"}
     except Exception as e:
