@@ -143,7 +143,7 @@ async def reset_status(script_name: str, file_name: str, timeout: int = 60):
         last_update = active_files[(script_name, file_name)][1]
         # Проверяем, прошло ли timeout секунд с момента последнего обновления
         if datetime.now(timezone.utc) - last_update >= timedelta(seconds=timeout):
-            PROCESSING_STATUS.labels(script_name=script_name, file_name=file_name).set(0)
+            # PROCESSING_STATUS.labels(script_name=script_name, file_name=file_name).set(0)
             active_files.pop((script_name, file_name), None)
 
 
@@ -163,7 +163,7 @@ async def track_file(metrics_name: FileMetrics, background_tasks: BackgroundTask
         ).set(current_rows)
 
         # Запускаем фоновую задачу для сброса через 60 секунд
-        # background_tasks.add_task(reset_status, metrics_name.script_name, metrics_name.file_name)
+        background_tasks.add_task(reset_status, metrics_name.script_name, metrics_name.file_name)
 
         return {"message": f"Metrics updated: {current_rows} rows"}
     except Exception as e:
