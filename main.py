@@ -125,7 +125,7 @@ async def track_file(metrics_name: FileMetrics):
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
-async def reset_status(script_name: str, file_name: str, timeout: int = 60):
+async def reset_status(script_name: str, timeout: int = 60) -> None:
     """
     Resets the real-time processing status of a file to 0 after a specified timeout.
 
@@ -134,25 +134,24 @@ async def reset_status(script_name: str, file_name: str, timeout: int = 60):
     in the PROCESSING_STATUS metric to 0 and removes the file from the dictionary.
 
     :param script_name: The name of the script that processed the file.
-    :param file_name: The name of the file that was processed.
     :param timeout: The number of seconds to wait before resetting the metric.
     """
     await asyncio.sleep(timeout)
 
-    if (script_name, file_name) in active_files:
-        last_update = active_files[(script_name, file_name)][1]
+    if script_name in active_files:
+        last_update: datetime = active_files[script_name][1]
         if datetime.now(timezone.utc) - last_update >= timedelta(seconds=timeout):
-            active_files.pop((script_name, file_name), None)
+            active_files.pop(script_name, None)
 
 
 @app.post("/real-time-stats/")
 async def track_file(metrics_name: FileMetrics, background_tasks: BackgroundTasks):
     try:
-        current_rows = active_files.get((metrics_name.script_name, metrics_name.file_name), (0, None))[0]
+        current_rows: int = active_files.get(metrics_name.script_name, (0, None))[0]
         current_rows += 1
 
         # Обновляем счетчик строк и время последней активности
-        active_files[(metrics_name.script_name, metrics_name.file_name)] = (current_rows, datetime.now(timezone.utc))
+        active_files[metrics_name.script_name] = (current_rows, datetime.now(timezone.utc))
 
         # Устанавливаем увеличенное значение метрики
         PROCESSING_STATUS.labels(
@@ -161,7 +160,7 @@ async def track_file(metrics_name: FileMetrics, background_tasks: BackgroundTask
         ).set(current_rows)
 
         # Запускаем фоновую задачу для сброса через 60 секунд
-        background_tasks.add_task(reset_status, metrics_name.script_name, metrics_name.file_name)
+        background_tasks.add_task(reset_status, metrics_name.script_name)
 
         return {"message": f"Metrics updated: {current_rows} rows"}
     except Exception as e:
