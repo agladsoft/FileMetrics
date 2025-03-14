@@ -141,9 +141,7 @@ async def reset_status(script_name: str, file_name: str, timeout: int = 60):
 
     if (script_name, file_name) in active_files:
         last_update = active_files[(script_name, file_name)][1]
-        # Проверяем, прошло ли timeout секунд с момента последнего обновления
         if datetime.now(timezone.utc) - last_update >= timedelta(seconds=timeout):
-            # PROCESSING_STATUS.labels(script_name=script_name, file_name=file_name).set(0)
             active_files.pop((script_name, file_name), None)
 
 
