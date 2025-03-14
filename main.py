@@ -125,7 +125,7 @@ async def track_file(metrics_name: FileMetrics):
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
-async def reset_status(script_name: str, timeout: int = 60) -> None:
+async def reset_status(script_name: str, timeout: int = 180) -> None:
     """
     Resets the real-time processing status of a file to 0 after a specified timeout.
 
