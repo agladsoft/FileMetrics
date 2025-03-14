@@ -1,11 +1,12 @@
 import os
 import uvicorn
-from fastapi import FastAPI
-from datetime import datetime
+import asyncio
 from pydantic import BaseModel
 from fastapi import HTTPException
 from prometheus_client.core import REGISTRY
+from fastapi import FastAPI, BackgroundTasks
 from fastapi.responses import PlainTextResponse
+from datetime import datetime, timezone, timedelta
 from prometheus_client import Counter, Gauge, Summary, generate_latest
 
 
@@ -39,6 +40,8 @@ PROCESSING_STATUS: Gauge = Gauge(
     ['script_name', 'file_name']
 )
 
+active_files: dict = {}  # Хранит временные метки последней активности
+
 
 class FileMetrics(BaseModel):
     script_name: str
@@ -59,10 +62,10 @@ async def metrics():
     return generate_latest(REGISTRY)
 
 
-@app.post("/track-file/")
+@app.post("/file-processed/")
 async def track_file(metrics_name: FileMetrics):
     """
-    Updates Prometheus metrics related to file processing.
+    Updates Prometheus metrics related to file processed.
 
     This endpoint increments the count of processed files and rows, observes
     the processing time, and sets the file upload timestamp for the specified
@@ -95,13 +98,13 @@ async def track_file(metrics_name: FileMetrics):
 
         return {"message": "Metrics updated"}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
-@app.post("/real-time-stats/")
+@app.post("/file-processing/")
 async def track_file(metrics_name: FileMetrics):
     """
-    Updates the real-time processing status of a file with the given metrics.
+    Updates the processing status of a file with the given metrics.
 
     This endpoint receives a `FileMetrics` object containing the script name,
     file name, and number of rows. It sets the processing status gauge for
@@ -119,7 +122,52 @@ async def track_file(metrics_name: FileMetrics):
 
         return {"message": "Metrics updated"}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+async def reset_status(script_name: str, file_name: str, timeout: int = 60):
+    """
+    Resets the real-time processing status of a file to 0 after a specified timeout.
+
+    This function waits for the specified timeout, then checks if the file is still
+    in the active_files dictionary. If it is, it resets the corresponding gauge
+    in the PROCESSING_STATUS metric to 0 and removes the file from the dictionary.
+
+    :param script_name: The name of the script that processed the file.
+    :param file_name: The name of the file that was processed.
+    :param timeout: The number of seconds to wait before resetting the metric.
+    """
+    await asyncio.sleep(timeout)
+
+    if (script_name, file_name) in active_files:
+        last_update = active_files[(script_name, file_name)][1]
+        # Проверяем, прошло ли timeout секунд с момента последнего обновления
+        if datetime.now(timezone.utc) - last_update >= timedelta(seconds=timeout):
+            PROCESSING_STATUS.labels(script_name=script_name, file_name=file_name).set(0)
+            active_files.pop((script_name, file_name), None)
+
+
+@app.post("/real-time-stats/")
+async def track_file(metrics_name: FileMetrics, background_tasks: BackgroundTasks):
+    try:
+        current_rows = active_files.get((metrics_name.script_name, metrics_name.file_name), (0, None))[0]
+        current_rows += 1
+
+        # Обновляем счетчик строк и время последней активности
+        active_files[(metrics_name.script_name, metrics_name.file_name)] = (current_rows, datetime.now(timezone.utc))
+
+        # Устанавливаем увеличенное значение метрики
+        PROCESSING_STATUS.labels(
+            script_name=metrics_name.script_name,
+            file_name=metrics_name.file_name
+        ).set(current_rows)
+
+        # Запускаем фоновую задачу для сброса через 60 секунд
+        background_tasks.add_task(reset_status, metrics_name.script_name, metrics_name.file_name)
+
+        return {"message": f"Metrics updated: {current_rows} rows"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 if __name__ == "__main__":
